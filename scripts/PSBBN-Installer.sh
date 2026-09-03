@@ -1706,10 +1706,13 @@ if [ "$MODE" = "install" ]; then
     apajail_magic_number
 
     # Setting up MBR:
+    # Slim MX4SIO (mmcblk) uses p suffix like loop devices
+    is_mmcblk=false
+    [[ "$DEVICE" == *mmcblk* ]] && is_mmcblk=true
     {
         echo -e ",${APA_MiB}MiB,17\n,32MiB,17\n,,07" | sudo sfdisk ${DEVICE}
         sudo partprobe ${DEVICE}
-        if [ "$(echo ${DEVICE} | grep -o /dev/loop)" = "/dev/loop" ]; then
+        if [ "$(echo ${DEVICE} | grep -o /dev/loop)" = "/dev/loop" ] || [ "$is_mmcblk" = true ]; then
 	        sudo mke2fs -t ext2 -L "RECOVERY" ${DEVICE}p2
 	        sudo "${MKFS_EXFAT}" -c 32K -L "OPL" ${DEVICE}p3
 	    else
@@ -1726,7 +1729,7 @@ if [ "$MODE" = "install" ]; then
 	    sudo mkdir -p "${STORAGE_DIR}/recovery" 2>> "${LOG_FILE}"
     fi
 
-    if [ "$(echo ${DEVICE} | grep -o /dev/loop)" = "/dev/loop" ]; then
+    if [ "$(echo ${DEVICE} | grep -o /dev/loop)" = "/dev/loop" ] || [[ "$DEVICE" == *mmcblk* ]]; then
 	    sudo mount ${DEVICE}p2 "${STORAGE_DIR}/recovery" 2>> "${LOG_FILE}"
 	else
         sudo mount ${DEVICE}2 "${STORAGE_DIR}/recovery" 2>> "${LOG_FILE}"

@@ -61,6 +61,8 @@ PS1_JPN_LIST="${SCRIPTS_DIR}/tmp/ps1-jpn.list"
 PS2_LIST="${SCRIPTS_DIR}/tmp/ps2.list"
 PS2_JPN_LIST="${SCRIPTS_DIR}/tmp/ps2-jpn.list"
 SMB_POPS_LIST="${SCRIPTS_DIR}/tmp/smb-pops.list"
+SMB_PS2_LIST="${SCRIPTS_DIR}/tmp/smb-ps2.list"
+SMB_PS2_JPN_LIST="${SCRIPTS_DIR}/tmp/smb-ps2-jpn.list"
 POPS_JPN_LIST="${SCRIPTS_DIR}/tmp/pops-jpn.list"
 TMP_LIST="${SCRIPTS_DIR}/tmp/tmp.list"
 ALL_TITLES="${SCRIPTS_DIR}/tmp/titles.list"
@@ -2026,7 +2028,7 @@ create_game_assets() {
 
             # Generate the system.cnf files
             # Determine the launcher value for this specific game
-            if [[ "$disc_type" == "POPS" || "$disc_type" == "__.POPS" || "$disc_type" == "SMB" ]]; then
+            if [[ "$disc_type" == "POPS" || "$disc_type" == "__.POPS" || "$disc_type" == "SMB" || "$disc_type" == "SMB2" ]]; then
                 launcher_value="$disc_type"
             else
                 launcher_value="$LAUNCHER"
@@ -2085,6 +2087,26 @@ HDDUNITPOWER = NICHDD
 path = ata:/POPS/$file_name
 titleid = $game_id
 nohistory = 1
+EOL
+            elif [[ "$launcher_value" == "SMB2" || "$disc_type" == "SMB2" ]]; then
+                # PS2 via Mango Samba - OPL SMB mode
+                # Source Mango config if available
+                [[ -f "${TOOLKIT_PATH}/config/smb.cfg" ]] && source "${TOOLKIT_PATH}/config/smb.cfg"
+                SMB_IP_VAL=${SMB_IP:-192.168.8.1}
+                SMB_SHARE_VAL=${SMB_SHARE:-PS2SMB}
+                cat > "${game_dir}/system.cnf" <<EOL
+BOOT2 = PATINFO
+HDDUNITPOWER = NICHDD
+path = hdd0:__system:pfs:/launcher/OPNPS2LD.ELF
+titleid = $game_id
+nohistory = 1
+arg = smb
+arg = $SMB_IP_VAL
+arg = $SMB_SHARE_VAL
+arg = DVD/$file_name
+arg = $game_id
+arg = $disc_type
+skip_argv0 = 0
 EOL
             fi
 
@@ -2711,10 +2733,10 @@ if [ -s "${PFS_POPS_LIST}" ]; then
     cat "${PFS_POPS_LIST}" >> "${PS1_LIST}"
 fi
 
-# Create games list of PS2 games to be installed
+# Create games list of PS2 games to be installed (local exFAT)
 if find "${OPL}/CD/" "${OPL}/DVD" -maxdepth 1 -type f \( -iname "*.iso" -o -iname "*.zso" \) | grep -q .; then
     SPLASH
-    echo "Creating PS2 games list..." >> "${LOG_FILE}"
+    echo "Creating PS2 games list (local BDM)..." >> "${LOG_FILE}"
     echo "${UI_TEXT[GAME_INSTALLER_40]}"
     python3 -u "${HELPER_DIR}/list-builder.py" "${OPL}" "${PS2_LIST}"
     if [ "${PIPESTATUS[0]}" -ne 0 ]; then
@@ -2761,6 +2783,31 @@ fi
 if [[ ! -s "${PS2_LIST}" ]] && find "${OPL}/CD/" "${OPL}/DVD/" -maxdepth 1 -type f \( -iname "*.iso" -o -iname "*.zso" \) | grep -q .; then
     echo "[X] Error: Failed to create games list." >> "${LOG_FILE}"
     error_msg "Error" "${UI_TEXT[ERROR_GAME_LIST]}"
+fi
+
+# Create games list of PS2 SMB games (Mango) - from local games/SMB/DVD and SMB/CD (mirrors Mango share)
+if [[ -d "${GAMES_PATH}/SMB/DVD" || -d "${GAMES_PATH}/SMB/CD" ]]; then
+    if find "${GAMES_PATH}/SMB/DVD" "${GAMES_PATH}/SMB/CD" -maxdepth 1 -type f \( -iname "*.iso" -o -iname "*.zso" \) 2>/dev/null | grep -q .; then
+        SPLASH
+        echo "Creating PS2 SMB games list (Mango)..." >> "${LOG_FILE}"
+        mkdir -p "${SCRIPTS_DIR}/tmp/smb2_tmp/DVD" "${SCRIPTS_DIR}/tmp/smb2_tmp/CD" 2>/dev/null
+        rm -f "${SCRIPTS_DIR}/tmp/smb2_tmp/DVD/"* "${SCRIPTS_DIR}/tmp/smb2_tmp/CD/"* 2>/dev/null
+        # Copy filenames only (hardlink to avoid duplicate space) for list-builder scan
+        shopt -s nullglob
+        for f in "${GAMES_PATH}/SMB/DVD/"*.iso "${GAMES_PATH}/SMB/DVD/"*.ISO "${GAMES_PATH}/SMB/DVD/"*.zso "${GAMES_PATH}/SMB/DVD/"*.ZSO; do [[ -f "$f" ]] && ln -sf "$f" "${SCRIPTS_DIR}/tmp/smb2_tmp/DVD/" 2>/dev/null; done
+        for f in "${GAMES_PATH}/SMB/CD/"*.iso "${GAMES_PATH}/SMB/CD/"*.ISO "${GAMES_PATH}/SMB/CD/"*.zso "${GAMES_PATH}/SMB/CD/"*.ZSO; do [[ -f "$f" ]] && ln -sf "$f" "${SCRIPTS_DIR}/tmp/smb2_tmp/CD/" 2>/dev/null; done
+        shopt -u nullglob
+        python3 -u "${HELPER_DIR}/list-builder.py" "${SCRIPTS_DIR}/tmp/smb2_tmp" "${SMB_PS2_LIST}" 2>>"${LOG_FILE}" || echo "[!] SMB2 list builder warning" >>"${LOG_FILE}"
+        # Rewrite tag DVD/CD -> SMB2
+        if [[ -s "${SMB_PS2_LIST}" ]]; then
+            sed -i -E 's/\|(DVD|CD)\|/|SMB2|/g' "${SMB_PS2_LIST}"
+            echo "SMB2 games found:" >>"${LOG_FILE}"; cat "${SMB_PS2_LIST}" >>"${LOG_FILE}"
+            if [[ "$lang" == "jpn" ]]; then sort_jpn "${SMB_PS2_LIST}" "${SMB_PS2_JPN_LIST}"; fi
+            if [ -s "${SMB_PS2_LIST}" ]; then python3 "${HELPER_DIR}/list-sorter.py" "${SMB_PS2_LIST}" 2>>"${LOG_FILE}" || true; fi
+            if [ -s "${SMB_PS2_JPN_LIST}" ]; then cat "${SMB_PS2_JPN_LIST}" > "${TMP_LIST}"; cat "${SMB_PS2_LIST}" >> "${TMP_LIST}"; cat "${TMP_LIST}" > "${SMB_PS2_LIST}"; fi
+        fi
+        rm -rf "${SCRIPTS_DIR}/tmp/smb2_tmp" 2>/dev/null
+    fi
 fi
 
 if [[ ! -s "${PS1_LIST}" ]] && find "${OPL}/POPS/" -maxdepth 1 -type f \( -iname "*.VCD" \) | grep -q .; then
@@ -3425,7 +3472,7 @@ fi
 
 ################################### Game Selector ###################################
 
-cat "${PS1_LIST}" "${SMB_POPS_LIST}" "${PS2_LIST}" "${APPS_LIST}" 2>/dev/null >> "${ALL_TITLES}"
+cat "${PS1_LIST}" "${SMB_POPS_LIST}" "${PS2_LIST}" "${SMB_PS2_LIST}" "${APPS_LIST}" 2>/dev/null >> "${ALL_TITLES}"
 
 if [ -s "${ALL_TITLES}" ]; then
     # Set maximum number of items for the Game Channel

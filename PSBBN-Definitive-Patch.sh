@@ -183,6 +183,7 @@ center_menu() {
         MAIN_MENU_OPTION_4
         MAIN_MENU_OPTION_5
         MAIN_MENU_OPTION_6
+        MAIN_MENU_OPTION_7
     )
 
     for key in "${MENU_KEYS[@]}"; do
@@ -680,17 +681,26 @@ UNMOUNT_ALL() {
     done
 }
 
+get_opl_partition() {
+    if [[ "$DEVICE" == *mmcblk* || "$DEVICE" == *loop* ]]; then
+        echo "${DEVICE}p3"
+    else
+        echo "${DEVICE}3"
+    fi
+}
+
 MOUNT_OPL() {
     mkdir -p "${OPL}" 2>>"${LOG_FILE}" || {
         echo "[X] Error: Failed to create ${OPL}." >> "${LOG_FILE}"
         error_msg "${UI_TEXT[ERROR_CREATE]} ${OPL}."
         }
 
-    sudo mount -o uid=$UID,gid=$(id -g) ${DEVICE}3 "${OPL}" >> "${LOG_FILE}" 2>&1
+    OPL_PART=$(get_opl_partition)
+    sudo mount -o uid=$UID,gid=$(id -g) "${OPL_PART}" "${OPL}" >> "${LOG_FILE}" 2>&1
 
     # Handle possibility host system's `mount` is using Fuse
     if [ $? -ne 0 ] && hash mount.exfat-fuse; then
-        sudo mount.exfat-fuse -o uid=$UID,gid=$(id -g) ${DEVICE}3 "${OPL}" >> "${LOG_FILE}" 2>&1
+        sudo mount.exfat-fuse -o uid=$UID,gid=$(id -g) "${OPL_PART}" "${OPL}" >> "${LOG_FILE}" 2>&1
     fi
 }
 
@@ -778,6 +788,10 @@ option_six() {
     "${SCRIPTS_DIR}/Extras.sh" "$LANG_FILE" "$path_arg"
 }
 
+option_seven() {
+    "${SCRIPTS_DIR}/SMB-Config.sh" "$LANG_FILE" "$path_arg"
+}
+
 SPLASH() {
     clear
     cat << "EOF"
@@ -805,6 +819,7 @@ display_menu() {
     printf "%*s%s\n\n" "$padding" "4) " "${UI_TEXT[MAIN_MENU_OPTION_4]}"
     printf "%*s%s\n\n" "$padding" "5) " "${UI_TEXT[MAIN_MENU_OPTION_5]}"
     printf "%*s%s\n\n" "$padding" "6) " "${UI_TEXT[MAIN_MENU_OPTION_6]}"
+    printf "%*s%s\n\n" "$padding" "7) " "${UI_TEXT[MAIN_MENU_OPTION_7]}"
     printf "%*s%s\n\n" "$padding" "q) " "${UI_TEXT[MENU_QUIT]}"
     printf "%*s%s " "$((padding - 3))" "" "${UI_TEXT[MENU_PROMPT]}"
 }
@@ -881,7 +896,12 @@ fi
 
 activate_python
 
-DEVICE=$(sudo blkid -t TYPE=exfat | grep OPL | awk -F: '{print $1}' | sed 's/[0-9]*$//')
+DEVICE_RAW=$(sudo blkid -t TYPE=exfat | grep OPL | awk -F: '{print $1}' | head -n1)
+if [[ "$DEVICE_RAW" == *mmcblk* || "$DEVICE_RAW" == *loop*p3 ]]; then
+    DEVICE=$(echo "$DEVICE_RAW" | sed -E 's/p[0-9]+$//')
+else
+    DEVICE=$(echo "$DEVICE_RAW" | sed -E 's/[0-9]+$//')
+fi
 
 if [[ -z "$DEVICE" ]]; then
     UPDATE="NO"
@@ -1004,6 +1024,7 @@ while true; do
             4) option_four; display_menu ;;
             5) option_five; display_menu ;;
             6) option_six; display_menu ;;
+            7) option_seven; display_menu ;;
             q|Q) clear; break ;;
             *) printf "%*s%s " "$((padding - 3))" "" "${UI_TEXT[MENU_INVALID]}"
                sleep 2
