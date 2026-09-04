@@ -301,6 +301,7 @@ MAIN_MENU_OPTION_3=Update PS2 System Software
 MAIN_MENU_OPTION_4=Install Games and Apps
 MAIN_MENU_OPTION_5=Install Media
 MAIN_MENU_OPTION_6=Optional Extras
+MAIN_MENU_OPTION_7=Configure Mango SMB (Slim + Network)
 MEDIA_LOCATION_1=Current Media Folder:
 MEDIA_LOCATION_2=Enter new path for media folder:
 MEDIA_LOCATION_3=Invalid path. Please try again.
